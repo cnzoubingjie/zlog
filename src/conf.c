@@ -34,6 +34,12 @@
 #include "rotater.h"
 #include "zc_defs.h"
 
+#ifdef _MSC_VER
+#define DEF_TIME_FMT "%Y-%m-%d %H:%M:%S"
+#else
+#define DEF_TIME_FMT "%F %T"
+#endif
+
 /*******************************************************************************/
 #define ZLOG_CONF_DEFAULT_FORMAT "default = \"%D %V [%p:%F:%L] %m%n\""
 #define ZLOG_CONF_DEFAULT_RULE "*.*        >stdout"
@@ -224,6 +230,10 @@ static int zlog_conf_build_without_file(zlog_conf_t * a_conf)
 /*******************************************************************************/
 static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section);
 
+#ifdef _MSC_VER
+#define lstat(a,b) _stat(a,b)
+#endif
+
 static int zlog_conf_build_with_file(zlog_conf_t * a_conf)
 {
 	int rc = 0;
@@ -241,13 +251,17 @@ static int zlog_conf_build_with_file(zlog_conf_t * a_conf)
 	int section = 0;
 	/* [global:1] [levels:2] [formats:3] [rules:4] */
 
+#if _MSC_VER
+	if (_stat(a_conf->file, &a_stat)) {
+#else
 	if (lstat(a_conf->file, &a_stat)) {
+#endif
 		zc_error("lstat conf file[%s] fail, errno[%d]", a_conf->file,
 			 errno);
 		return -1;
 	}
 	localtime_r(&(a_stat.st_mtime), &local_time);
-	strftime(a_conf->mtime, sizeof(a_conf->mtime), "%F %T", &local_time);
+	strftime(a_conf->mtime, sizeof(a_conf->mtime), DEF_TIME_FMT, &local_time);
 
 	if ((fp = fopen(a_conf->file, "r")) == NULL) {
 		zc_error("open configure file[%s] fail", a_conf->file);

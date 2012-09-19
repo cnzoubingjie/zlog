@@ -121,6 +121,13 @@ int zlog_init(const char *confpath)
 	zc_debug("------compile time[%s %s], git version[%s]------",
 			__DATE__, __TIME__, zlog_git_sha1);
 
+#ifdef _MSC_VER
+	{
+	  WSADATA wasd;
+	  WSAStartup(MAKEWORD(2,2),&wasd);
+	}
+#endif
+
 	rc = pthread_rwlock_wrlock(&zlog_env_lock);
 	if (rc) {
 		zc_error("pthread_rwlock_wrlock fail, rc[%d]", rc);
@@ -253,7 +260,6 @@ int zlog_reload(const char *confpath)
 	zc_arraylist_foreach(new_conf->rules, i, a_rule) {
 		zlog_rule_set_record(a_rule, zlog_env_records);
 	}
-
 	if (zlog_category_table_update_rules(zlog_env_categories, new_conf->rules)) {
 		c_up = 0;
 		zc_error("zlog_category_table_update fail");

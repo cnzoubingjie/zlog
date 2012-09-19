@@ -23,19 +23,26 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#ifndef _MSC_VER
 #include <sys/time.h>
+#endif
 #include <time.h>
 #include <errno.h>
 #include <sys/types.h>
+#ifndef _MSC_VER
 #include <unistd.h>
+#endif
 
 #include "conf.h"
 #include "spec.h"
 #include "level_list.h"
 #include "zc_defs.h"
 
-
+#ifdef _MSC_VER
+#define ZLOG_DEFAULT_TIME_FMT "%Y-%m-%d %H:%M:%S"
+#else
 #define ZLOG_DEFAULT_TIME_FMT "%F %T"
+#endif
 #define	ZLOG_HEX_HEAD  \
 	"\n             0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F    0123456789ABCDEF"
 
@@ -70,7 +77,7 @@ void zlog_spec_profile(zlog_spec_t * a_spec, int flag)
 			/* strftime %D time fmt per second*/   \
 			strftime(a_thread->event->D_time_str,   \
 				sizeof(a_thread->event->D_time_str),  \
-				"%F %T", &(a_thread->event->local_time) ); \
+				ZLOG_DEFAULT_TIME_FMT, &(a_thread->event->local_time) ); \
    \
 			/* strftime %d() per second */   \
 			if (a_thread->event->last_time_fmt) {   \
@@ -90,7 +97,10 @@ static int zlog_spec_write_time(zlog_spec_t * a_spec, zlog_thread_t * a_thread, 
 	/* strftime %d() is slow too, do it when 
 	 * time_fmt changed(event go through another spec) */
 	if (a_thread->event->last_time_fmt != a_spec->time_fmt) {
-		a_thread->event->last_time_fmt = a_spec->time_fmt;
+                /* The last_time_fmt memory can be free'd when zlog_reload deletes the formats */
+                /* disable this for now.                                                       */
+		//a_thread->event->last_time_fmt = a_spec->time_fmt;
+
 		a_thread->event->time_str_len = strftime(a_thread->event->time_str,
 			sizeof(a_thread->event->time_str),
 			a_spec->time_fmt, &(a_thread->event->local_time));

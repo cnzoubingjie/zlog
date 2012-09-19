@@ -40,6 +40,7 @@ int main(int argc, char *argv[])
 		"\t-h,\tshow help message\n"
 		"\t-v,\tshow zlog library's git version\n";
 
+#ifndef _MSC_VER
 	while((op = getopt(argc, argv, "qhv")) > 0) {
 		if (op == 'h') {
 			puts(help);
@@ -54,12 +55,16 @@ int main(int argc, char *argv[])
 
 	argc -= optind;
 	argv += optind;
+#endif
 
 	if (argc == 0) {
 		puts(help);
 		return -1;
 	}
 
+#ifdef _MSC_VER
+#define setenv(a,b,c) _putenv_s(a,b)
+#endif
 	setenv("ZLOG_PROFILE_ERROR", "/dev/stderr", 1);
 	setenv("ZLOG_CHECK_FORMAT_RULE", "1", 1);
 

@@ -229,7 +229,11 @@ int zlog_buf_vprintf(zlog_buf_t * a_buf, const char *format, va_list args)
 		return -1;
 	}
 
+#ifdef _MSC_VER
+	ap = args;
+#else
 	va_copy(ap, args);
+#endif
 	size_left = a_buf->end_plus_1 - a_buf->tail;
 	nwrite = vsnprintf(a_buf->tail, size_left, format, ap);
 	if (nwrite >= 0 && nwrite < size_left) {
@@ -246,7 +250,11 @@ int zlog_buf_vprintf(zlog_buf_t * a_buf, const char *format, va_list args)
 		rc = zlog_buf_resize(a_buf, nwrite - size_left + 1);
 		if (rc > 0) {
 			zc_error("conf limit to %ld, can't extend, so truncate", a_buf->size_max);
-			va_copy(ap, args);
+#ifdef _MSC_VER
+ 	                ap = args;
+#else
+	                va_copy(ap, args);
+#endif
 			size_left = a_buf->end_plus_1 - a_buf->start;
 			vsnprintf(a_buf->tail, size_left, format, ap);
 			a_buf->tail += size_left - 1;
@@ -259,7 +267,11 @@ int zlog_buf_vprintf(zlog_buf_t * a_buf, const char *format, va_list args)
 		} else {
 			//zc_debug("zlog_buf_resize succ, to[%ld]", a_buf->size_real);
 
-			va_copy(ap, args);
+#ifdef _MSC_VER
+	                ap = args;
+#else
+	                va_copy(ap, args);
+#endif
 			size_left = a_buf->end_plus_1 - a_buf->tail;
 			nwrite = vsnprintf(a_buf->tail, size_left, format, ap);
 			if (nwrite < 0) {
