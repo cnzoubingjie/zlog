@@ -26,13 +26,14 @@
 #define __zlog_rule_h
 
 #include <stdio.h>
-#include <pthread.h>
-
+#include <signal.h>
 #include "zc_defs.h"
 #include "format.h"
 #include "thread.h"
 #include "rotater.h"
 #include "record.h"
+
+#define DEFAULT_ROTATE_PERIOD 100
 
 typedef struct zlog_rule_s zlog_rule_t;
 
@@ -50,20 +51,16 @@ struct zlog_rule_s {
 	int level;
 	unsigned char level_bitmap[32]; /* for category determine whether ouput or not */
 
+	char file_path[MAXLEN_PATH + 1];
+	zc_arraylist_t *dynamic_file_specs;
+	int static_file_descriptor;
+	FILE *static_file_stream;
+	pthread_rwlock_t static_reopen_lock;
+
 	unsigned int file_perms;
 	int file_open_flags;
-
-	char file_path[MAXLEN_PATH + 1];
-	zc_arraylist_t *dynamic_specs;
-	int static_fd;
-
-	long archive_max_size;
-	int archive_max_count;
-	char archive_path[MAXLEN_PATH + 1];
-	zc_arraylist_t *archive_specs;
-
-	FILE *pipe_fp;
-	int pipe_fd;
+	long file_max_size;
+	int file_max_count;
 
 	size_t fsync_period;
 	size_t fsync_count;
@@ -72,14 +69,20 @@ struct zlog_rule_s {
 	int syslog_facility;
 
 	zlog_format_t *format;
+	zlog_rotater_t *rotater;
+
+	size_t rotate_period;
+	size_t rotate_count;
+
 	zlog_rule_output_fn output;
 
 	char record_name[MAXLEN_PATH + 1];
 	char record_path[MAXLEN_PATH + 1];
-	zlog_record_fn record_func;
+	zlog_record_fn record_output;
 };
 
 zlog_rule_t *zlog_rule_new(char *line,
+		zlog_rotater_t * a_rotater,
 		zc_arraylist_t * levels,
 		zlog_format_t * default_format,
 		zc_arraylist_t * formats,

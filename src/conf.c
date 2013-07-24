@@ -17,7 +17,6 @@
  * along with the zlog Library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "fmacros.h"
 #include <ctype.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -110,7 +109,7 @@ void zlog_conf_del(zlog_conf_t * a_conf)
 static int zlog_conf_build_without_file(zlog_conf_t * a_conf);
 static int zlog_conf_build_with_file(zlog_conf_t * a_conf);
 
-zlog_conf_t *zlog_conf_new(const char *confpath)
+zlog_conf_t *zlog_conf_new(char *conf_file)
 {
 	int nwrite = 0;
 	int has_conf_file = 0;
@@ -122,8 +121,8 @@ zlog_conf_t *zlog_conf_new(const char *confpath)
 		return NULL;
 	}
 
-	if (confpath && confpath[0] != '\0') {
-		nwrite = snprintf(a_conf->file, sizeof(a_conf->file), "%s", confpath);
+	if (conf_file && conf_file[0] != '\0') {
+		nwrite = snprintf(a_conf->file, sizeof(a_conf->file), "%s", conf_file);
 		has_conf_file = 1;
 	} else if (getenv("ZLOG_CONF_PATH") != NULL) {
 		nwrite = snprintf(a_conf->file, sizeof(a_conf->file), "%s", getenv("ZLOG_CONF_PATH"));
@@ -142,8 +141,12 @@ zlog_conf_t *zlog_conf_new(const char *confpath)
 	a_conf->buf_size_min = ZLOG_CONF_DEFAULT_BUF_SIZE_MIN;
 	a_conf->buf_size_max = ZLOG_CONF_DEFAULT_BUF_SIZE_MAX;
 	if (has_conf_file) {
-		/* configure file as default lock file */
+#ifdef _MSC_VER
+                // Use a different lock in windows to avoid some of the built in file locking.
+                sprintf(a_conf->rotate_lock_file, "%s.lock", a_conf->file);
+#else
 		strcpy(a_conf->rotate_lock_file, a_conf->file);
+#endif
 	} else {
 		strcpy(a_conf->rotate_lock_file, ZLOG_CONF_BACKUP_ROTATE_LOCK_FILE);
 	}
@@ -158,7 +161,6 @@ zlog_conf_t *zlog_conf_new(const char *confpath)
 		zc_error("zlog_level_list_new fail");
 		goto err;
 	} 
-
 	a_conf->formats = zc_arraylist_new((zc_arraylist_del_fn) zlog_format_del);
 	if (!a_conf->formats) {
 		zc_error("zc_arraylist_new fail");
@@ -194,7 +196,7 @@ static int zlog_conf_build_without_file(zlog_conf_t * a_conf)
 {
 	zlog_rule_t *default_rule;
 
-	a_conf->default_format = zlog_format_new(a_conf->default_format_line);
+	a_conf->default_format = zlog_format_new(a_conf->default_format_line, a_conf->levels);
 	if (!a_conf->default_format) {
 		zc_error("zlog_format_new fail");
 		return -1;
@@ -208,6 +210,7 @@ static int zlog_conf_build_without_file(zlog_conf_t * a_conf)
 
 	default_rule = zlog_rule_new(
 			ZLOG_CONF_DEFAULT_RULE,
+			a_conf->rotater,
 			a_conf->levels,
 			a_conf->default_format,
 			a_conf->formats,
@@ -237,7 +240,7 @@ static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section);
 static int zlog_conf_build_with_file(zlog_conf_t * a_conf)
 {
 	int rc = 0;
-	struct zlog_stat a_stat;
+	struct stat a_stat;
 	struct tm local_time;
 	FILE *fp = NULL;
 
@@ -251,11 +254,7 @@ static int zlog_conf_build_with_file(zlog_conf_t * a_conf)
 	int section = 0;
 	/* [global:1] [levels:2] [formats:3] [rules:4] */
 
-#if _MSC_VER
-	if (_stat(a_conf->file, &a_stat)) {
-#else
 	if (lstat(a_conf->file, &a_stat)) {
-#endif
 		zc_error("lstat conf file[%s] fail, errno[%d]", a_conf->file,
 			 errno);
 		return -1;
@@ -400,7 +399,7 @@ static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section)
 				return -1;
 			}
 
-			a_conf->default_format = zlog_format_new(a_conf->default_format_line);
+			a_conf->default_format = zlog_format_new(a_conf->default_format_line, a_conf->levels);
 			if (!a_conf->default_format) {
 				zc_error("zlog_format_new fail");
 				return -1;
@@ -443,11 +442,7 @@ static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section)
 		} else if (STRCMP(word_1, ==, "rotate") &&
 				STRCMP(word_2, ==, "lock") && STRCMP(word_3, ==, "file")) {
 			/* may overwrite the inner default value, or last value */
-			if (STRCMP(value, ==, "self")) {
-				strcpy(a_conf->rotate_lock_file, a_conf->file);
-			} else {
-				strcpy(a_conf->rotate_lock_file, value);
-			}
+			strcpy(a_conf->rotate_lock_file, value);
 		} else if (STRCMP(word_1, ==, "default") && STRCMP(word_2, ==, "format")) {
 			/* so the input now is [format = "xxyy"], fit format's style */
 			strcpy(a_conf->default_format_line, line + nread);
@@ -468,7 +463,7 @@ static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section)
 		}
 		break;
 	case 3:
-		a_format = zlog_format_new(line);
+		a_format = zlog_format_new(line, a_conf->levels);
 		if (!a_format) {
 			zc_error("zlog_format_new fail [%s]", line);
 			if (a_conf->strict_init) return -1;
@@ -482,6 +477,7 @@ static int zlog_conf_parse_line(zlog_conf_t * a_conf, char *line, int *section)
 		break;
 	case 4:
 		a_rule = zlog_rule_new(line,
+			a_conf->rotater,
 			a_conf->levels,
 			a_conf->default_format,
 			a_conf->formats,

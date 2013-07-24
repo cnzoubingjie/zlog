@@ -60,7 +60,7 @@ void zlog_format_del(zlog_format_t * a_format)
 	return;
 }
 
-zlog_format_t *zlog_format_new(char *line)
+zlog_format_t *zlog_format_new(char *line, zc_arraylist_t *levels)
 {
 	int nscan = 0;
 	zlog_format_t *a_format = NULL;
@@ -72,6 +72,7 @@ zlog_format_t *zlog_format_new(char *line)
 	zlog_spec_t *a_spec;
 
 	zc_assert(line, NULL);
+	zc_assert(levels, NULL);
 
 	a_format = calloc(1, sizeof(zlog_format_t));
 	if (!a_format) {
@@ -129,7 +130,7 @@ zlog_format_t *zlog_format_new(char *line)
 	}
 
 	for (p = a_format->pattern; *p != '\0'; p = q) {
-		a_spec = zlog_spec_new(p, &q);
+		a_spec = zlog_spec_new(p, &q, levels);
 		if (!a_spec) {
 			zc_error("zlog_spec_new fail");
 			goto err;

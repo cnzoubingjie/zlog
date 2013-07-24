@@ -4,10 +4,6 @@
 #include <time.h>
 #include <stdio.h>
 
-int strcasecmp(char *a,char *b) {
-  return(_stricmp(a,b));
-}
-
 struct tm *localtime_r(long *clock,struct tm *res)
 {
     _localtime32_s(res,clock);

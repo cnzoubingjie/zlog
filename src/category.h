@@ -23,16 +23,21 @@
 #include "zc_defs.h"
 #include "thread.h"
 
-typedef struct zlog_category_s {
+struct zlog_category_s {
 	char name[MAXLEN_PATH + 1];
 	size_t name_len;
 	unsigned char level_bitmap[32];
 	unsigned char level_bitmap_backup[32];
 	zc_arraylist_t *fit_rules;
 	zc_arraylist_t *fit_rules_backup;
-} zlog_category_t;
+};
 
-zlog_category_t *zlog_category_new(const char *name, zc_arraylist_t * rules);
+#ifndef __HAVE_ZLOG_CATEGORY_T
+#define __HAVE_ZLOG_CATEGORY_T
+typedef struct zlog_category_s zlog_category_t;
+#endif
+
+zlog_category_t *zlog_category_new(char *name, zc_arraylist_t * rules);
 void zlog_category_del(zlog_category_t * a_category);
 void zlog_category_profile(zlog_category_t *a_category, int flag);
 

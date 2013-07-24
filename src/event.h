@@ -20,14 +20,10 @@
 #ifndef __zlog_event_h
 #define __zlog_event_h
 
-#include <sys/types.h>  /* for pid_t */
-#ifndef _MSC_VER
-#include <sys/time.h>   /* for struct timeval */
-#else
-#include <winsock2.h>
-#endif
-#include <pthread.h>    /* for pthread_t */
-#include <stdarg.h>     /* for va_list */
+#include <sys/types.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <stdarg.h>
 #include "zc_defs.h"
 
 typedef enum {

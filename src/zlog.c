@@ -17,13 +17,12 @@
  * along with the zlog Library. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "fmacros.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 #include <pthread.h>
+#include <signal.h>
 
 #include "conf.h"
 #include "category_table.h"
@@ -34,10 +33,8 @@
 #include "rule.h"
 
 /*******************************************************************************/
-extern char *zlog_git_sha1;
-/*******************************************************************************/
 static pthread_rwlock_t zlog_env_lock = PTHREAD_RWLOCK_INITIALIZER;
-zlog_conf_t *zlog_env_conf;
+static zlog_conf_t *zlog_env_conf;
 static pthread_key_t zlog_thread_key;
 static zc_arraylist_t *zlog_env_threads;
 static zc_hashtable_t *zlog_env_categories;
@@ -62,7 +59,7 @@ static void zlog_fini_inner(void)
 	return;
 }
 
-static int zlog_init_inner(const char *confpath)
+static int zlog_init_inner(char *confpath)
 {
 	int rc;
 	zlog_thread_t *a_thread;
@@ -114,12 +111,10 @@ err:
 }
 
 /*******************************************************************************/
-int zlog_init(const char *confpath)
+int zlog_init(char *confpath)
 {
 	int rc;
-	zc_debug("------zlog_init start------");
-	zc_debug("------compile time[%s %s], git version[%s]------",
-			__DATE__, __TIME__, zlog_git_sha1);
+	zc_debug("------zlog_init start, compile time[%s %s]------", __DATE__, __TIME__);
 
 #ifdef _MSC_VER
 	{
@@ -128,6 +123,7 @@ int zlog_init(const char *confpath)
 	}
 #endif
 
+	zc_debug("------zlog_init locking------");
 	rc = pthread_rwlock_wrlock(&zlog_env_lock);
 	if (rc) {
 		zc_error("pthread_rwlock_wrlock fail, rc[%d]", rc);
@@ -163,12 +159,10 @@ err:
 	return -1;
 }
 
-int dzlog_init(const char *confpath, const char *cname)
+int dzlog_init(char *confpath, char *cname)
 {
 	int rc = 0;
-	zc_debug("------zlog_init start, compile time[%s %s], git version[%s]------",
-			__DATE__, __TIME__, zlog_git_sha1);
-
+	zc_debug("------dzlog_init start, compile time[%s %s]------", __DATE__, __TIME__);
 	rc = pthread_rwlock_wrlock(&zlog_env_lock);
 	if (rc) {
 		zc_error("pthread_rwlock_wrlock fail, rc[%d]", rc);
@@ -213,7 +207,7 @@ err:
 	return -1;
 }
 /*******************************************************************************/
-int zlog_reload(const char *confpath)
+int zlog_reload(char *confpath)
 {
 	int rc = 0;
 	int i = 0;
@@ -260,6 +254,7 @@ int zlog_reload(const char *confpath)
 	zc_arraylist_foreach(new_conf->rules, i, a_rule) {
 		zlog_rule_set_record(a_rule, zlog_env_records);
 	}
+
 	if (zlog_category_table_update_rules(zlog_env_categories, new_conf->rules)) {
 		c_up = 0;
 		zc_error("zlog_category_table_update fail");
@@ -347,7 +342,7 @@ exit:
 	return;
 }
 /*******************************************************************************/
-zlog_category_t *zlog_get_category(const char *cname)
+zlog_category_t *zlog_get_category(char *cname)
 {
 	int rc = 0;
 	zlog_category_t *a_category = NULL;
@@ -392,7 +387,7 @@ err:
 	return NULL;
 }
 
-int dzlog_set_category(const char *cname)
+int dzlog_set_category(char *cname)
 {
 	int rc = 0;
 	zc_assert(cname, -1);
@@ -435,7 +430,7 @@ err:
 	return -1;
 }
 /*******************************************************************************/
-int zlog_put_mdc(const char *key, const char *value)
+int zlog_put_mdc(char *key, char *value)
 {
 	int rc = 0;
 	zlog_thread_t *a_thread;
@@ -1026,7 +1021,7 @@ void zlog_profile(void)
 	return;
 }
 /*******************************************************************************/
-int zlog_set_record(const char *rname, zlog_record_fn record_output)
+int zlog_set_record(char *name, zlog_record_fn record_output)
 {
 	int rc = 0;
 	int rd = 0;
@@ -1034,7 +1029,7 @@ int zlog_set_record(const char *rname, zlog_record_fn record_output)
 	zlog_record_t *a_record;
 	int i = 0;
 
-	zc_assert(rname, -1);
+	zc_assert(name, -1);
 	zc_assert(record_output, -1);
 
 	rd = pthread_rwlock_wrlock(&zlog_env_lock);
@@ -1048,7 +1043,7 @@ int zlog_set_record(const char *rname, zlog_record_fn record_output)
 		goto zlog_set_record_exit;
 	}
 
-	a_record = zlog_record_new(rname, record_output);
+	a_record = zlog_record_new(name, record_output);
 	if (!a_record) {
 		rc = -1;
 		zc_error("zlog_record_new fail");
@@ -1073,4 +1068,25 @@ int zlog_set_record(const char *rname, zlog_record_fn record_output)
 		return -1;
 	}
 	return rc;
+}
+
+void zlog_cleanup_thread(void) {
+  int rd = 0;
+  zlog_thread_t *a_thread;
+
+  rd = pthread_rwlock_wrlock(&zlog_env_lock);
+  if (rd) {
+    zc_error("pthread_rwlock_rdlock fail, rd[%d]", rd);
+  }
+  a_thread = pthread_getspecific(zlog_thread_key);
+  if (a_thread != NULL) {
+    zlog_thread_del(a_thread);
+    pthread_setspecific(zlog_thread_key,NULL);
+  }
+  if(!rd) {
+    rd = pthread_rwlock_unlock(&zlog_env_lock);
+    if (rd) {
+      zc_error("pthread_rwlock_unlock fail, rd=[%d]", rd);
+    }
+  }
 }

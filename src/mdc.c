@@ -56,7 +56,7 @@ static void zlog_mdc_kv_del(zlog_mdc_kv_t * a_mdc_kv)
 	zc_debug("zlog_mdc_kv_del[%p]", a_mdc_kv);
 }
 
-static zlog_mdc_kv_t *zlog_mdc_kv_new(const char *key, const char *value)
+static zlog_mdc_kv_t *zlog_mdc_kv_new(char *key, char *value)
 {
 	zlog_mdc_kv_t *a_mdc_kv;
 
@@ -68,6 +68,9 @@ static zlog_mdc_kv_t *zlog_mdc_kv_new(const char *key, const char *value)
 
 	snprintf(a_mdc_kv->key, sizeof(a_mdc_kv->key), "%s", key);
 	a_mdc_kv->value_len = snprintf(a_mdc_kv->value, sizeof(a_mdc_kv->value), "%s", value);
+	zc_debug("zlog_mdc_kv_new[%p][%s-%s]",
+		a_mdc_kv,
+		a_mdc_kv->key, a_mdc_kv->value);
 	return a_mdc_kv;
 }
 
@@ -98,7 +101,7 @@ err:
 }
 
 /*******************************************************************************/
-int zlog_mdc_put(zlog_mdc_t * a_mdc, const char *key, const char *value)
+int zlog_mdc_put(zlog_mdc_t * a_mdc, char *key, char *value)
 {
 	zlog_mdc_kv_t *a_mdc_kv;
 
@@ -123,7 +126,7 @@ void zlog_mdc_clean(zlog_mdc_t * a_mdc)
 	return;
 }
 
-char *zlog_mdc_get(zlog_mdc_t * a_mdc, const char *key)
+char *zlog_mdc_get(zlog_mdc_t * a_mdc, char *key)
 {
 	zlog_mdc_kv_t *a_mdc_kv;
 
@@ -136,7 +139,7 @@ char *zlog_mdc_get(zlog_mdc_t * a_mdc, const char *key)
 	}
 }
 
-zlog_mdc_kv_t *zlog_mdc_get_kv(zlog_mdc_t * a_mdc, const char *key)
+zlog_mdc_kv_t *zlog_mdc_get_kv(zlog_mdc_t * a_mdc, char *key)
 {
 	zlog_mdc_kv_t *a_mdc_kv;
 
@@ -149,7 +152,7 @@ zlog_mdc_kv_t *zlog_mdc_get_kv(zlog_mdc_t * a_mdc, const char *key)
 	}
 }
 
-void zlog_mdc_remove(zlog_mdc_t * a_mdc, const char *key)
+void zlog_mdc_remove(zlog_mdc_t * a_mdc, char *key)
 {
 	zc_hashtable_remove(a_mdc->tab, key);
 	return;
