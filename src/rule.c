@@ -56,17 +56,8 @@ int zlogclose(zlogfd fd) {
 #else
 typedef int zlogfd;
 #define zlogopen(f,m,p) open(f,m,p)
-int zlogwrite(int f,char *s,int l) {
-  if(f<=0) {
-    
-  }
-  write(f,s,l);
-}
-int zlogclose(int f) {
-  if(f <= 0) return;
-  close(f);
-  return(-1);
-}
+#define zlogwrite(f,s,l) write(f,s,l)
+#define zlogclose(f) close(f)
 #endif
 
 void zlog_rule_profile(zlog_rule_t * a_rule, int flag)

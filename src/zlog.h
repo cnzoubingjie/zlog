@@ -95,12 +95,14 @@ typedef enum {
 #if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 199901L
 # if defined __GNUC__ && __GNUC__ >= 2
 #  define __func__ __FUNCTION__
+# elif defined _MSC_VER
+#  define __func__ __FUNCTION__
 # else
 #  define __func__ "<unknown>"
 #endif
 # endif
 
-#if defined __STDC_VERSION__ && __STDC_VERSION__ >= 199901L
+#if (defined __STDC_VERSION__ && __STDC_VERSION__ >= 199901L) || defined _MSC_VER
 /* zlog macros */
 #define zlog_fatal(cat, ...) \
 	zlog(cat, __FILE__, sizeof(__FILE__)-1, __func__, sizeof(__func__)-1, __LINE__, \

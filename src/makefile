@@ -53,6 +53,7 @@ ifeq ($(OSTYPE),unix)
   endif
   LINK=gcc $(LDFLAGS) -s -o 
   LINKSO=gcc $(LDFLAGS) -s -shared -o 
+  LIBPROG=ar q 
   MT=echo 
 
   OBJEXT=.o
@@ -90,7 +91,7 @@ else
     LINKSO="$(CLPATHa)/bin/link" /nologo $(SOFLAGS) /machine:ix86 $(LBS) /debug /fixed:no /incremental:no /out:
     CFLAGS=/nologo /MD /W3 /Od /Z7 /D "WIN32" /D "SYS_WINNT" /D FD_SETSIZE=512 /I $(LIBHOME) /I . $(INCS) /D "_CRT_SECURE_NO_WARNINGS" /D "_CRT_SECURE_NO_DEPRECATE"
   endif
-
+  LIBPROG=lib /out:
 
   LLIBS=msvcrt.lib oldnames.lib kernel32.lib user32.lib \
         ws2_32.lib advapi32.lib netapi32.lib winspool.lib
@@ -164,5 +165,6 @@ $(OBJS) : %$(OBJEXT) : %.c $(INCLUDES)
 	$(CC) $(CFLAGS) -c $<
 
 zlog$(LIBEXT): $(OBJS)
-	lib /out:zlog.lib $(OBJS)
+	rm -f zlog$(LIBEXT)
+	$(LIBPROG)zlog$(LIBEXT) $(OBJS)
 
