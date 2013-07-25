@@ -3,18 +3,7 @@
  *
  * Copyright (C) 2011 by Hardy Simpson <HardySimpson1984@gmail.com>
  *
- * The zlog Library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The zlog Library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the zlog Library. If not, see <http://www.gnu.org/licenses/>.
+ * Licensed under the LGPL v2.1, see the file COPYING in base directory.
  */
 #ifndef __zc_xplatform_h
 #define __zc_xplatform_h
@@ -55,11 +44,20 @@
 #define STRNCMP(_a_,_C_,_b_,_n_) ( strncmp(_a_,_b_,_n_) _C_ 0 )
 
 #ifdef _WIN32
-#define STRICMP(_a_,_C_,_b_) ( stricmp(_a_,_b_) _C_ 0 )
+#define STRICMP(_a_,_C_,_b_) ( _stricmp(_a_,_b_) _C_ 0 )
 #define STRNICMP(_a_,_C_,_b_,_n_) ( strnicmp(_a_,_b_,_n_) _C_ 0 )
 #else
 #define STRICMP(_a_,_C_,_b_) ( strcasecmp(_a_,_b_) _C_ 0 )
 #define STRNICMP(_a_,_C_,_b_,_n_) ( strncasecmp(_a_,_b_,_n_) _C_ 0 )
+#endif
+
+/* Define zlog_fstat to fstat or fstat64() */
+#if defined(__APPLE__) && !defined(MAC_OS_X_VERSION_10_6)
+#define zlog_fstat fstat64
+#define zlog_stat stat64
+#else
+#define zlog_fstat fstat
+#define zlog_stat stat
 #endif
 
 #if 0

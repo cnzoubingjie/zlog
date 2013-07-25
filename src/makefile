@@ -1,185 +1,168 @@
-# zlog makefile
-# Copyright (C) 2010-2012 Hardy Simpson <HardySimpson1984@gmail.com>
-# This file is released under the LGPL license, see the COPYING file
 
-OBJ=    \
-  buf.o    \
-  category.o    \
-  category_table.o    \
-  conf.o    \
-  event.o    \
-  format.o    \
-  level.o    \
-  level_list.o    \
-  mdc.o    \
-  record.o    \
-  record_table.o    \
-  release.o    \
-  rotater.o    \
-  rule.o    \
-  spec.o    \
-  thread.o    \
-  thread_list.o    \
-  zc_arraylist.o    \
-  zc_hashtable.o    \
-  zc_profile.o    \
-  zc_util.o    \
-  zlog.o
-BINS=zlog-chk-conf
-LIBNAME=libzlog
-
-ZLOG_MAJOR=1
-ZLOG_MINOR=1
-
-# Fallback to gcc when $CC is not in $PATH.
-CC:=$(shell sh -c 'type $(CC) >/dev/null 2>/dev/null && echo $(CC) || echo gcc')
-OPTIMIZATION?=-O2
-WARNINGS=-Wall -Werror -Wstrict-prototypes
-DEBUG?= -g -ggdb
-REAL_CFLAGS=$(OPTIMIZATION) -fPIC $(CFLAGS) $(WARNINGS) $(DEBUG)
-REAL_LDFLAGS=$(LDFLAGS) -lpthread
-
-DYLIBSUFFIX=so
-STLIBSUFFIX=a
-DYLIB_MINOR_NAME=$(LIBNAME).$(DYLIBSUFFIX).$(ZLOG_MAJOR).$(ZLOG_MINOR)
-DYLIB_MAJOR_NAME=$(LIBNAME).$(DYLIBSUFFIX).$(ZLOG_MAJOR)
-DYLIBNAME=$(LIBNAME).$(DYLIBSUFFIX)
-DYLIB_MAKE_CMD=$(CC) -shared -Wl,-soname,$(DYLIB_MINOR_NAME) -o $(DYLIBNAME) $(LDFLAGS)
-STLIBNAME=$(LIBNAME).$(STLIBSUFFIX)
-STLIB_MAKE_CMD=ar rcs $(STLIBNAME)
-
-# Platform-specific overrides
-uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
-ifeq ($(uname_S),SunOS)
-#  REAL_LDFLAGS+= -ldl -lnsl -lsocket
-  DYLIB_MAKE_CMD=$(CC) -G -o $(DYLIBNAME) -h $(DYLIB_MINOR_NAME) $(LDFLAGS)
-  INSTALL= cp -r
-endif
-ifeq ($(uname_S),Darwin)
-  DYLIBSUFFIX=dylib
-  DYLIB_MINOR_NAME=$(LIBNAME).$(HIREDIS_MAJOR).$(HIREDIS_MINOR).$(DYLIBSUFFIX)
-  DYLIB_MAJOR_NAME=$(LIBNAME).$(HIREDIS_MAJOR).$(DYLIBSUFFIX)
-  DYLIB_MAKE_CMD=$(CC) -shared -Wl,-install_name,$(DYLIB_MINOR_NAME) -o $(DYLIBNAME) $(LDFLAGS)
+ifeq ($(LIBHOME),)
+LIBHOME:=$(FEPHOME)/lib
 endif
 
-all: $(DYLIBNAME) $(BINS)
+TESTF := $(word 3,$(shell bash -c "grep FEPLIB_VERSION $(LIBHOME)/sysident.h"))
+TEST510 = $(shell bash -c "if [ "$(TESTF)" -gt 510 ]; then echo yes; fi")
+TEST700 = $(shell bash -c "if [ "$(TESTF)" -ge 700 ]; then echo yes; fi")
+TEST750 = $(shell bash -c "if [ "$(TESTF)" -ge 750 ]; then echo yes; fi")
 
-# Deps (use make dep to generate this)
-buf.o: buf.c zc_defs.h zc_profile.h zc_arraylist.h zc_hashtable.h \
- zc_xplatform.h zc_util.h buf.h
-category.o: category.c fmacros.h category.h zc_defs.h zc_profile.h \
- zc_arraylist.h zc_hashtable.h zc_xplatform.h zc_util.h thread.h event.h \
- buf.h mdc.h rule.h format.h rotater.h record.h
-category_table.o: category_table.c zc_defs.h zc_profile.h zc_arraylist.h \
- zc_hashtable.h zc_xplatform.h zc_util.h category_table.h category.h \
- thread.h event.h buf.h mdc.h
-conf.o: conf.c fmacros.h conf.h zc_defs.h zc_profile.h zc_arraylist.h \
- zc_hashtable.h zc_xplatform.h zc_util.h format.h thread.h event.h buf.h \
- mdc.h rotater.h rule.h record.h level_list.h level.h
-event.o: event.c fmacros.h zc_defs.h zc_profile.h zc_arraylist.h \
- zc_hashtable.h zc_xplatform.h zc_util.h event.h
-format.o: format.c zc_defs.h zc_profile.h zc_arraylist.h zc_hashtable.h \
- zc_xplatform.h zc_util.h thread.h event.h buf.h mdc.h spec.h format.h
-level.o: level.c zc_defs.h zc_profile.h zc_arraylist.h zc_hashtable.h \
- zc_xplatform.h zc_util.h level.h
-level_list.o: level_list.c zc_defs.h zc_profile.h zc_arraylist.h \
- zc_hashtable.h zc_xplatform.h zc_util.h level.h level_list.h
-mdc.o: mdc.c mdc.h zc_defs.h zc_profile.h zc_arraylist.h zc_hashtable.h \
- zc_xplatform.h zc_util.h
-record.o: record.c zc_defs.h zc_profile.h zc_arraylist.h zc_hashtable.h \
- zc_xplatform.h zc_util.h record.h
-record_table.o: record_table.c zc_defs.h zc_profile.h zc_arraylist.h \
- zc_hashtable.h zc_xplatform.h zc_util.h record_table.h record.h
-release.o: release.c release.h
-rotater.o: rotater.c zc_defs.h zc_profile.h zc_arraylist.h zc_hashtable.h \
- zc_xplatform.h zc_util.h rotater.h
-rule.o: rule.c fmacros.h rule.h zc_defs.h zc_profile.h zc_arraylist.h \
- zc_hashtable.h zc_xplatform.h zc_util.h format.h thread.h event.h buf.h \
- mdc.h rotater.h record.h level_list.h level.h spec.h
-spec.o: spec.c fmacros.h spec.h event.h zc_defs.h zc_profile.h \
- zc_arraylist.h zc_hashtable.h zc_xplatform.h zc_util.h buf.h thread.h \
- mdc.h level_list.h level.h
-thread.o: thread.c zc_defs.h zc_profile.h zc_arraylist.h zc_hashtable.h \
- zc_xplatform.h zc_util.h event.h buf.h thread.h mdc.h
-thread_list.o: thread_list.c zc_defs.h zc_profile.h zc_arraylist.h \
- zc_hashtable.h zc_xplatform.h zc_util.h thread_list.h thread.h event.h \
- buf.h mdc.h
-zc_arraylist.o: zc_arraylist.c zc_defs.h zc_profile.h zc_arraylist.h \
- zc_hashtable.h zc_xplatform.h zc_util.h
-zc_hashtable.o: zc_hashtable.c zc_defs.h zc_profile.h zc_arraylist.h \
- zc_hashtable.h zc_xplatform.h zc_util.h
-zc_profile.o: zc_profile.c fmacros.h zc_profile.h zc_xplatform.h
-zc_util.o: zc_util.c zc_defs.h zc_profile.h zc_arraylist.h zc_hashtable.h \
- zc_xplatform.h zc_util.h
-zlog-chk-conf.o: zlog-chk-conf.c fmacros.h zlog.h
-zlog.o: zlog.c fmacros.h conf.h zc_defs.h zc_profile.h zc_arraylist.h \
- zc_hashtable.h zc_xplatform.h zc_util.h format.h thread.h event.h buf.h \
- mdc.h rotater.h category_table.h category.h thread_list.h record_table.h \
- record.h rule.h
+DBGTEST=$(wildcard debug_build)
+ROOTTEST= $(strip $(shell bash -c "ls C:/ 2>/dev/null"))
+ifeq ($(ROOTTEST),)
+  OSTYPE:=unix
+  OSPLAT:=$(shell bash -c "uname -m")
+  ifneq ($(findstring arm,$(OSPLAT)),)
+    OSPLAT:=arm
+  else
+    ifeq ($(shell bash -c "uname -s"),SunOS)
+      OSPLAT:=sun
+    else
+      OSPLAT:=linux86
+    endif
+  endif
+else
+  OSTYPE:=win
+  OSPLAT:=win
+endif
 
-$(DYLIBNAME): $(OBJ)
-	$(DYLIB_MAKE_CMD) $(OBJ)
-	cp -f $(DYLIBNAME) $(DYLIB_MINOR_NAME) # for test directory
+ifeq ($(OSTYPE),unix)
+  VERSION_OBJ:=
+  LIBHOME_CYG:=$(LIBHOME)
+  CCFIN:=-c
+  CCFOUT:=-o
+  CC=gcc
+  COMFLAGS=-I$(FEPHOME)/lib -I. -O2
+  ifeq ($(OSPLAT),sun)
+    LLIBS=-lsocket -lnsl -ldl -lm -lelf
+    CFLAGS=-DSYS_SUNOS=8 $(COMFLAGS)
+    LDFLAGS=-mimpure-text
+  else
+    ifeq ($(OSPLAT),linux86)
+      LLIBS=-lm -lpam -ldl -lpthread
+      CFLAGS=-DSYS_LINUX $(COMFLAGS)
+      LDFLAGS=
+    else
+      ifeq ($(OSPLAT),arm)
+        LLIBS=-lm -lpam -ldl -lpthread
+        CFLAGS=-DSYS_ARM -fPIC $(COMFLAGS)
+        LDFLAGS=
+      endif
+    endif
+  endif
+  LINK=gcc $(LDFLAGS) -s -o 
+  LINKSO=gcc $(LDFLAGS) -s -shared -o 
+  MT=echo 
 
-$(STLIBNAME): $(OBJ)
-	$(STLIB_MAKE_CMD) $(OBJ)
+  OBJEXT=.o
+  LIBEXT=.a
+  SOEXT=.so
+  EXEEXT=
+  VCDLLS=
+else
+  VERSION_OBJ:=version.obj
+  LIBHOME_CYG :=$(shell bash -c "cygpath -au $(LIBHOME)")
+  CCFIN:=/TC -c 
+  CCFOUT:=/Fo
+  CLPATHa = $(patsubst %/bin/cl.exe,%, $(shell bash -c "type -p cl.exe | tr A-Z a-z"))
+  CLPATH  = $(shell bash -c "cygpath -ds \"$(CLPATHa)\"")
+  CLPATHW = $(shell bash -c "cygpath -m \"$(CLPATHa)\"")
+  INCS=/I "$(CLPATHW)\include" /I pthread /I unixem_include
+  LBS=/LIBPATH:"$(CLPATHW)\lib"
 
-dynamic: $(DYLIBNAME)
-static: $(STLIBNAME)
+  SOFLAGS = /dll
+  CC=cl
+  ifneq ($(TEST700),)
+    MT=mt 
+  else
+    MT=echo 
+  endif
 
-# Binaries:
-zlog-chk-conf: zlog-chk-conf.o $(STLIBNAME)
-	$(CC) -o $@ $(REAL_CFLAGS) $(REAL_LDFLAGS) zlog-chk-conf.o $(STLIBNAME)
+  ifeq ($(DBGTEST),)
+    LINK="$(CLPATHa)/bin/link" /nologo /machine:ix86 /release $(LBS) /out:
+    LINKSO="$(CLPATHa)/bin/link" /nologo $(SOFLAGS) /machine:ix86 $(LBS) /release /out:
+    CFLAGS=/nologo /MD /W3 /Ox /Z7 /D "NDEBUG" /D "WIN32" /D "SYS_WINNT" /D FD_SETSIZE=512 /I $(LIBHOME) /I . $(INCS) /D "_CRT_SECURE_NO_WARNINGS" /D "_CRT_SECURE_NO_DEPRECATE"
+  else
+# Debug enabled versions
 
-.c.o:
-	$(CC) -std=c99 -pedantic -c $(REAL_CFLAGS) $<
+    LINK="$(CLPATHa)/bin/link" /nologo /machine:ix86 /debug $(LBS) /fixed:no /incremental:no /out:
+    LINKSO="$(CLPATHa)/bin/link" /nologo $(SOFLAGS) /machine:ix86 $(LBS) /debug /fixed:no /incremental:no /out:
+    CFLAGS=/nologo /MD /W3 /Od /Z7 /D "WIN32" /D "SYS_WINNT" /D FD_SETSIZE=512 /I $(LIBHOME) /I . $(INCS) /D "_CRT_SECURE_NO_WARNINGS" /D "_CRT_SECURE_NO_DEPRECATE"
+  endif
+
+
+  LLIBS=msvcrt.lib oldnames.lib kernel32.lib user32.lib \
+        ws2_32.lib advapi32.lib netapi32.lib winspool.lib
+  OBJEXT=.obj
+  LIBEXT=.lib
+  SOEXT=.dll
+  EXEEXT=.exe
+#  VCDLLS=$(CLPATH)\bin\mspdb60.dll
+endif
+
+MTSLIB=$(wildcard $(LIBHOME)/mtsclient$(LIBEXT))
+
+OBJS :=$(patsubst %.c, %$(OBJEXT), $(wildcard *.c))
+
+INCLUDES=\
+         $(wildcard $(LIBHOME)/*.h) \
+         $(wildcard *.h)
+
+PROGNAME := $(firstword $(patsubst %.pnt,%, $(wildcard *.pnt)))
+CLNTNAME := $(firstword $(patsubst %.client,%, $(wildcard *.client)))
+LASTNAME := $(firstword $(patsubst %.c,%, $(wildcard *.c)))
+
+FEPLIBS= $(MTSLIB) \
+         $(LIBHOME)/fep$(LIBEXT)      \
+         $(LIBHOME)/cutil$(LIBEXT)    \
+         $(LIBHOME)/snio$(LIBEXT)     \
+         $(MTSLIB) \
+         $(LIBHOME)/fep$(LIBEXT)      \
+         $(LIBHOME)/cutil$(LIBEXT)    \
+         $(LIBHOME)/snio$(LIBEXT)
+DRVSHELL_MAIN=
+DRVSHELL=
+TGTEXT=$(EXEEXT)
+
+ifeq ($(OSTYPE),unix)
+  FLIBS=$(FEPLIBS)
+else
+  ifneq ($(FEPLIBS),)
+    ifeq ($(OSTYPE),win)
+      FLIBS :=$(shell bash -c "cygpath -au $(FEPLIBS)")
+    endif
+  else
+    FLIBS=
+  endif
+endif
+
+ifeq ($(OBJS),)
+  TGTEXT=.def
+endif
+
+lib: $(OBJS) zlog$(LIBEXT)
 
 clean:
-	rm -rf $(DYLIBNAME) $(STLIBNAME) $(BINS) *.o *.gcda *.gcno *.gcov $(DYLIB_MINOR_NAME)
+	@echo
+	@echo "Cleaning Directory ..."
+	@rm -f $(OBJS)
+	@rm -f log$(LIBEXT)
+	@rm -f pthread$(OBJEXT)
+	@rm -f *.exp
+	@rm -f *.lib
+	@rm -f *.pch
+	@rm -f *.pdb
+	@rm -f *.ilk
+	@rm -f *.ncb
+	@rm -f *.vss
+	@rm -f *.scc
+	@echo "done."
+	@echo
 
-dep:
-	$(CC) -MM *.c
+$(OBJS) : %$(OBJEXT) : %.c $(INCLUDES)
+	$(CC) $(CFLAGS) -c $<
 
-# Installation related variables and target
-PREFIX?=/usr/local
-INCLUDE_PATH?=include
-LIBRARY_PATH?=lib
-INSTALL_INCLUDE_PATH= $(PREFIX)/$(INCLUDE_PATH)
-INSTALL_LIBRARY_PATH= $(PREFIX)/$(LIBRARY_PATH)
+zlog$(LIBEXT): $(OBJS)
+	lib /out:zlog.lib $(OBJS)
 
-ifeq ($(uname_S),SunOS)
-  INSTALL?= cp -r
-endif
-
-INSTALL?= cp -a
-
-install: $(DYLIBNAME) $(STLIBNAME)
-	mkdir -p $(INSTALL_INCLUDE_PATH) $(INSTALL_LIBRARY_PATH)
-	$(INSTALL) zlog.h $(INSTALL_INCLUDE_PATH)
-	$(INSTALL) $(DYLIBNAME) $(INSTALL_LIBRARY_PATH)/$(DYLIB_MINOR_NAME)
-	cd $(INSTALL_LIBRARY_PATH) && ln -sf $(DYLIB_MINOR_NAME) $(DYLIB_MAJOR_NAME)
-	cd $(INSTALL_LIBRARY_PATH) && ln -sf $(DYLIB_MAJOR_NAME) $(DYLIBNAME)
-	$(INSTALL) $(STLIBNAME) $(INSTALL_LIBRARY_PATH)
-
-32bit:
-	@echo ""
-	@echo "WARNING: if this fails under Linux you probably need to install libc6-dev-i386"
-	@echo ""
-	$(MAKE) CFLAGS="-m32" LDFLAGS="-m32"
-
-gprof:
-	$(MAKE) CFLAGS="-pg" LDFLAGS="-pg"
-
-gcov:
-	$(MAKE) CFLAGS="-fprofile-arcs -ftest-coverage" LDFLAGS="-fprofile-arcs"
-
-coverage: gcov
-	make check
-	mkdir -p tmp/lcov
-	lcov -d . -c -o tmp/lcov/hiredis.info
-	genhtml --legend -o tmp/lcov/report tmp/lcov/hiredis.info
-
-noopt:
-	$(MAKE) OPTIMIZATION=""
-
-.PHONY: all clean dep install 32bit gprof gcov noopt

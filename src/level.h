@@ -3,18 +3,7 @@
  *
  * Copyright (C) 2011 by Hardy Simpson <HardySimpson1984@gmail.com>
  *
- * The zlog Library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The zlog Library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the zlog Library. If not, see <http://www.gnu.org/licenses/>.
+ * Licensed under the LGPL v2.1, see the file COPYING in base directory.
  */
 
 #ifndef __zlog_level_h
@@ -22,16 +11,10 @@
 
 #include "zc_defs.h"
 
-#ifdef _MSC_VER
-#ifndef PATH_MAX
-#define PATH_MAX 255
-#endif
-#endif
-
 typedef struct zlog_level_s {
 	int int_level;
-	char str_uppercase[PATH_MAX + 1];
-	char str_lowercase[PATH_MAX + 1];
+	char str_uppercase[MAXLEN_PATH + 1];
+	char str_lowercase[MAXLEN_PATH + 1];
 	size_t str_len;
        	int syslog_level;
 } zlog_level_t;

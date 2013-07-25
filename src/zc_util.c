@@ -3,18 +3,7 @@
  *
  * Copyright (C) 2011 by Hardy Simpson <HardySimpson1984@gmail.com>
  *
- * The zlog Library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The zlog Library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the zlog Library. If not, see <http://www.gnu.org/licenses/>.
+ * Licensed under the LGPL v2.1, see the file COPYING in base directory.
  */
 
 #include <string.h>
@@ -87,7 +76,7 @@ size_t zc_parse_byte_size(char *astring)
 }
 
 /*******************************************************************************/
-int zc_str_replace_env(char *str, size_t size)
+int zc_str_replace_env(char *str, size_t str_size)
 {
 	char *p;
 	char *q;
@@ -96,14 +85,13 @@ int zc_str_replace_env(char *str, size_t size)
 	char env_value[MAXLEN_CFG_LINE + 1];
 	int str_len;
 	int env_value_len;
+	int nscan;
+	int nread;
 
 	str_len = strlen(str);
 	q = str;
 
 	do {
-		int nscan = 0;
-		int nread = 0;
-
 		p = strchr(q, '%');
 		if (!p) {
 			/* can't find more % */
@@ -113,7 +101,7 @@ int zc_str_replace_env(char *str, size_t size)
 		memset(fmt, 0x00, sizeof(fmt));
 		memset(env_key, 0x00, sizeof(env_key));
 		memset(env_value, 0x00, sizeof(env_value));
-
+		nread = 0;
 		nscan = sscanf(p + 1, "%[.0-9-]%n", fmt + 1, &nread);
 		if (nscan == 1) {
 			fmt[0] = '%';
@@ -137,9 +125,7 @@ int zc_str_replace_env(char *str, size_t size)
 			return -1;
 		}
 
-		env_value_len =
-		    snprintf(env_value, sizeof(env_value), fmt,
-			     getenv(env_key));
+		env_value_len = snprintf(env_value, sizeof(env_value), fmt, getenv(env_key));
 		if (env_value_len < 0 || env_value_len >= sizeof(env_value)) {
 			zc_error("snprintf fail, errno[%d], evn_value_len[%d]",
 				 errno, env_value_len);
@@ -147,9 +133,8 @@ int zc_str_replace_env(char *str, size_t size)
 		}
 
 		str_len = str_len - (q - p) + env_value_len;
-		if (str_len > size - 1) {
-			zc_error("repalce env_value[%s] cause overlap",
-				 env_value);
+		if (str_len > str_size - 1) {
+			zc_error("repalce env_value[%s] cause overlap", env_value);
 			return -1;
 		}
 

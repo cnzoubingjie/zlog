@@ -3,18 +3,7 @@
  *
  * Copyright (C) 2011 by Hardy Simpson <HardySimpson1984@gmail.com>
  *
- * The zlog Library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The zlog Library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the zlog Library. If not, see <http://www.gnu.org/licenses/>.
+ * Licensed under the LGPL v2.1, see the file COPYING in base directory.
  */
 
 /**
@@ -26,14 +15,13 @@
 #define __zlog_rule_h
 
 #include <stdio.h>
-#include <signal.h>
+#include <pthread.h>
+
 #include "zc_defs.h"
 #include "format.h"
 #include "thread.h"
 #include "rotater.h"
 #include "record.h"
-
-#define DEFAULT_ROTATE_PERIOD 100
 
 typedef struct zlog_rule_s zlog_rule_t;
 
@@ -51,16 +39,24 @@ struct zlog_rule_s {
 	int level;
 	unsigned char level_bitmap[32]; /* for category determine whether ouput or not */
 
-	char file_path[MAXLEN_PATH + 1];
-	zc_arraylist_t *dynamic_file_specs;
-	int static_file_descriptor;
-	FILE *static_file_stream;
-	pthread_rwlock_t static_reopen_lock;
-
 	unsigned int file_perms;
 	int file_open_flags;
-	long file_max_size;
-	int file_max_count;
+
+	char file_path[MAXLEN_PATH + 1];
+	zc_arraylist_t *dynamic_specs;
+#ifdef _MSC_VER
+	HANDLE static_fd;
+#else
+	int static_fd;
+#endif
+
+	long archive_max_size;
+	int archive_max_count;
+	char archive_path[MAXLEN_PATH + 1];
+	zc_arraylist_t *archive_specs;
+
+	FILE *pipe_fp;
+	int pipe_fd;
 
 	size_t fsync_period;
 	size_t fsync_count;
@@ -69,25 +65,20 @@ struct zlog_rule_s {
 	int syslog_facility;
 
 	zlog_format_t *format;
-	zlog_rotater_t *rotater;
-
-	size_t rotate_period;
-	size_t rotate_count;
-
 	zlog_rule_output_fn output;
 
 	char record_name[MAXLEN_PATH + 1];
 	char record_path[MAXLEN_PATH + 1];
-	zlog_record_fn record_output;
+	zlog_record_fn record_func;
 };
 
-zlog_rule_t *zlog_rule_new(char *line,
-		zlog_rotater_t * a_rotater,
+zlog_rule_t *zlog_rule_new(char * line,
 		zc_arraylist_t * levels,
 		zlog_format_t * default_format,
 		zc_arraylist_t * formats,
 		unsigned int file_perms,
-		size_t fsync_period);
+		size_t fsync_period,
+		int * time_cache_count);
 
 void zlog_rule_del(zlog_rule_t * a_rule);
 void zlog_rule_profile(zlog_rule_t * a_rule, int flag);

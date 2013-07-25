@@ -3,18 +3,7 @@
  *
  * Copyright (C) 2011 by Hardy Simpson <HardySimpson1984@gmail.com>
  *
- * The zlog Library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The zlog Library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the zlog Library. If not, see <http://www.gnu.org/licenses/>.
+ * Licensed under the LGPL v2.1, see the file COPYING in base directory.
  */
 
 #include <string.h>
@@ -38,20 +27,40 @@
 #include "zc_defs.h"
 #include "rotater.h"
 
-struct zlog_rotater_s {
-	pthread_mutex_t lock_mutex;
-	char *lock_file;
-	int lock_fd;
-};
+#define ROLLING  1     /* aa.02->aa.03, aa.01->aa.02, aa->aa.01 */
+#define SEQUENCE 2     /* aa->aa.03 */
+
+typedef struct {
+	int index;
+	char path[MAXLEN_PATH + 1];
+} zlog_file_t;
 
 void zlog_rotater_profile(zlog_rotater_t * a_rotater, int flag)
 {
 	zc_assert(a_rotater,);
-	zc_profile(flag, "--rotater[%p][%p,%s,%d]--",
+	zc_profile(flag, "--rotater[%p][%p,%s,%d][%s,%s,%s,%ld,%ld,%d,%d,%d]--",
 		a_rotater,
+
 		&(a_rotater->lock_mutex),
 		a_rotater->lock_file,
-		a_rotater->lock_fd);
+		a_rotater->lock_fd,
+
+		a_rotater->base_path,
+		a_rotater->archive_path,
+		a_rotater->glob_path,
+		(long)a_rotater->num_start_len,
+		(long)a_rotater->num_end_len,
+		a_rotater->num_width,
+		a_rotater->mv_type,
+		a_rotater->max_count
+		);
+	if (a_rotater->files) {
+		int i;
+		zlog_file_t *a_file;
+		zc_arraylist_foreach(a_rotater->files, i, a_file) {
+			zc_profile(flag, "[%s,%d]->", a_file->path, a_file->index);
+		}
+	}
 	return;
 }
 
@@ -83,7 +92,11 @@ void zlog_rotater_del(zlog_rotater_t *a_rotater)
 
 zlog_rotater_t *zlog_rotater_new(char *lock_file)
 {
+#ifndef _MSC_VER
 	int fd = 0;
+#else
+        HANDLE fd = 0;
+#endif
 	zlog_rotater_t *a_rotater;
 
 	zc_assert(lock_file, NULL);
@@ -118,11 +131,11 @@ zlog_rotater_t *zlog_rotater_new(char *lock_file)
 #else
 	fd = open(lock_file, O_RDWR | O_CREAT,
 		  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-#endif
 	if (fd < 0) {
 		zc_error("open file[%s] fail, errno[%d]", lock_file, errno);
 		goto err;
 	}
+#endif
 
 	a_rotater->lock_fd = fd;
 	a_rotater->lock_file = lock_file;
@@ -134,95 +147,356 @@ err:
 	return NULL;
 }
 
-
 /*******************************************************************************/
-typedef struct {
-	int index;
-	char path[MAXLEN_PATH + 1];
-} zlog_rotater_onefile_t;
 
-static zlog_rotater_onefile_t *zlog_rotater_onefile_new(char *base_file_path,
-							char *real_file_path)
-{
-	int nwrite;
-	char tmp[MAXLEN_PATH + 1];
-	zlog_rotater_onefile_t *a_file;
-
-	if (STRNCMP(base_file_path, !=, real_file_path, strlen(base_file_path))) {
-		zc_error
-		    ("real_file_path[%s] is not consist of base_file_path[%s]",
-		     real_file_path, base_file_path);
-		return NULL;
-	}
-
-	a_file = calloc(1, sizeof(zlog_rotater_onefile_t));
-	if (!a_file) {
-		zc_error("calloc fail, errno[%d]", errno);
-		return NULL;
-	}
-
-	/* ok, set the path */
-	nwrite = snprintf(a_file->path, sizeof(a_file->path), "%s", real_file_path);
-	if (nwrite < 0 || nwrite >= sizeof(a_file->path)) {
-		zc_error("not enough space for a_file->path, nwrite=[%d]", nwrite);
-		goto err;
-	}
-
-	/* compare and set index, need check */
-	if (STRCMP(base_file_path, !=, real_file_path)) {
-		/* scan aa.123 to index=123 */
-		sscanf(real_file_path + strlen(base_file_path) + 1, "%d",
-		       &(a_file->index));
-
-		/* check, we do not need file like aa.001 */
-		memset(&tmp, 0x00, sizeof(tmp));
-		nwrite = snprintf(tmp, sizeof(tmp), "%s.%d", base_file_path, a_file->index);
-		if (nwrite < 0 || nwrite >= sizeof(tmp)) {
-			zc_error("not enough space for tmp, nwrite=[%d]",
-				 nwrite);
-			goto err;
-		}
-
-		if (STRCMP(real_file_path, !=, tmp)) {
-			zc_error
-			    ("real_file_path[%s] format is not aa.1, maybe aa.001",
-			     real_file_path);
-			goto err;
-		}		/* else ok that's right */
-	} else {
-		a_file->index = 0;
-	}
-
-	zc_debug("new onefile at [%p]", a_file);
-	zc_debug("a_file->path[%s]", a_file->path);
-	return a_file;
-err:
-	free(a_file);
-	return NULL;
-}
-
-static void zlog_rotater_onefile_del(zlog_rotater_onefile_t * a_file)
+static void zlog_file_del(zlog_file_t * a_file)
 {
 	zc_debug("del onefile[%p]", a_file);
 	zc_debug("a_file->path[%s]", a_file->path);
 	free(a_file);
 }
 
-static int zlog_rotater_onefile_cmp(zlog_rotater_onefile_t * a_file_1,
-				    zlog_rotater_onefile_t * a_file_2)
+static zlog_file_t *zlog_file_check_new(zlog_rotater_t * a_rotater, const char *path)
 {
-	if (a_file_1->index - a_file_2->index > 0)
-		return 1;
-	else if (a_file_1->index - a_file_2->index < 0)
-		return -1;
-	else
-		return 0;
+	int nwrite;
+	int nread;
+	zlog_file_t *a_file;
+
+	/* base_path will not be in list */
+	if (STRCMP(a_rotater->base_path, ==, path)) {
+		return NULL;
+	}
+
+	/* omit dirs */
+	if ((path)[strlen(path) - 1] == '/') {
+		return NULL;
+	}
+
+	a_file = calloc(1, sizeof(zlog_file_t));
+	if (!a_file) {
+		zc_error("calloc fail, errno[%d]", errno);
+		return NULL;
+	}
+
+	nwrite = snprintf(a_file->path, sizeof(a_file->path), "%s", path);
+	if (nwrite < 0 || nwrite >= sizeof(a_file->path)) {
+		zc_error("snprintf fail or overflow, nwrite=[%d], errno[%d]", nwrite, errno);
+		goto err;
+	}
+
+	nread = 0;
+	sscanf(a_file->path + a_rotater->num_start_len, "%d%n", &(a_file->index), &(nread));
+
+	if (a_rotater->num_width != 0) {
+		if (nread < a_rotater->num_width) {
+			zc_warn("aa.1.log is not expect, need aa.01.log");
+			goto err;
+		}
+	} /* else all file is ok */
+
+	return a_file;
+err:
+	free(a_file);
+	return NULL;
 }
 
+
+static int zlog_file_cmp(zlog_file_t * a_file_1, zlog_file_t * a_file_2)
+{
+	return (a_file_1->index > a_file_2->index);
+}
+
+static int zlog_rotater_add_archive_files(zlog_rotater_t * a_rotater)
+{
+	int rc = 0;
+	glob_t glob_buf;
+	size_t pathc;
+	char **pathv;
+	zlog_file_t *a_file;
+
+	a_rotater->files = zc_arraylist_new((zc_arraylist_del_fn)zlog_file_del);
+	if (!a_rotater->files) {
+		zc_error("zc_arraylist_new fail");
+		return -1;
+	}
+
+	/* scan file which is aa.*.log and aa */
+	rc = glob(a_rotater->glob_path, GLOB_ERR | GLOB_MARK | GLOB_NOSORT, NULL, &glob_buf);
+	if (rc == GLOB_NOMATCH) {
+		goto exit;
+	} else if (rc) {
+		zc_error("glob err, rc=[%d], errno[%d]", rc, errno);
+		return -1;
+	}
+
+	pathv = glob_buf.gl_pathv;
+	pathc = glob_buf.gl_pathc;
+
+	/* check and find match aa.[0-9]*.log, depend on num_width */
+	for (; pathc-- > 0; pathv++) {
+		a_file = zlog_file_check_new(a_rotater, *pathv);
+		if (!a_file) {
+			zc_warn("not the expect pattern file");
+			continue;
+		}
+
+		/* file in list aa.00, aa.01, aa.02... */
+		rc = zc_arraylist_sortadd(a_rotater->files,
+					(zc_arraylist_cmp_fn)zlog_file_cmp, a_file);
+		if (rc) {
+			zc_error("zc_arraylist_sortadd fail");
+			goto err;
+		}
+	}
+
+exit:
+	globfree(&glob_buf);
+	return 0;
+err:
+	globfree(&glob_buf);
+	return -1;
+}
+
+static int zlog_rotater_seq_files(zlog_rotater_t * a_rotater)
+{
+	int rc = 0;
+	int nwrite = 0;
+	int i, j;
+	zlog_file_t *a_file;
+	char new_path[MAXLEN_PATH + 1];
+
+	zc_arraylist_foreach(a_rotater->files, i, a_file) {
+		if (a_rotater->max_count > 0 
+			&& i < zc_arraylist_len(a_rotater->files) - a_rotater->max_count) {
+			/* unlink aa.0 aa.1 .. aa.(n-c) */
+			rc = unlink(a_file->path);
+			if (rc) {
+				zc_error("unlink[%s] fail, errno[%d]",a_file->path , errno);
+				return -1;
+			}
+			continue;
+		}
+	}
+
+	if (zc_arraylist_len(a_rotater->files) > 0) { /* list is not empty */
+		a_file = zc_arraylist_get(a_rotater->files, zc_arraylist_len(a_rotater->files)-1);
+		if (!a_file) {
+			zc_error("zc_arraylist_get fail");
+			return -1;
+		}
+
+		j = zc_max(zc_arraylist_len(a_rotater->files)-1, a_file->index) + 1;
+	} else {
+		j = 0;
+	}
+
+	/* do the base_path mv  */
+	memset(new_path, 0x00, sizeof(new_path));
+	nwrite = snprintf(new_path, sizeof(new_path), "%.*s%0*d%s",
+		(int) a_rotater->num_start_len, a_rotater->glob_path, 
+		a_rotater->num_width, j,
+		a_rotater->glob_path + a_rotater->num_end_len);
+	if (nwrite < 0 || nwrite >= sizeof(new_path)) {
+		zc_error("nwirte[%d], overflow or errno[%d]", nwrite, errno);
+		return -1;
+	}
+
+	if (rename(a_rotater->base_path, new_path)) {
+		zc_error("rename[%s]->[%s] fail, errno[%d]", a_rotater->base_path, new_path, errno);
+		return -1;
+	}
+
+	return 0;
+}
+
+
+static int zlog_rotater_roll_files(zlog_rotater_t * a_rotater)
+{
+	int i;
+	int rc = 0;
+	int nwrite;
+	char new_path[MAXLEN_PATH + 1];
+	zlog_file_t *a_file;
+
+	/* now in the list, aa.0 aa.1 aa.2 aa.02... */
+	for (i = zc_arraylist_len(a_rotater->files) - 1; i > -1; i--) {
+		a_file = zc_arraylist_get(a_rotater->files, i);
+		if (!a_file) {
+			zc_error("zc_arraylist_get fail");
+			return -1;
+		}
+
+		if (a_rotater->max_count > 0 && i >= a_rotater->max_count - 1) {
+			/* remove file.3 >= 3*/
+			rc = unlink(a_file->path);
+			if (rc) {
+				zc_error("unlink[%s] fail, errno[%d]",a_file->path , errno);
+				return -1;
+			}
+			continue;
+		}
+
+		/* begin rename aa.01.log -> aa.02.log , using i, as index in list maybe repeat */
+		memset(new_path, 0x00, sizeof(new_path));
+		nwrite = snprintf(new_path, sizeof(new_path), "%.*s%0*d%s",
+			(int) a_rotater->num_start_len, a_rotater->glob_path, 
+			a_rotater->num_width, i + 1,
+			a_rotater->glob_path + a_rotater->num_end_len);
+		if (nwrite < 0 || nwrite >= sizeof(new_path)) {
+			zc_error("nwirte[%d], overflow or errno[%d]", nwrite, errno);
+			return -1;
+		}
+
+		if (rename(a_file->path, new_path)) {
+			zc_error("rename[%s]->[%s] fail, errno[%d]", a_file->path, new_path, errno);
+			return -1;
+		}
+	}
+
+	/* do the base_path mv  */
+	memset(new_path, 0x00, sizeof(new_path));
+	nwrite = snprintf(new_path, sizeof(new_path), "%.*s%0*d%s",
+		(int) a_rotater->num_start_len, a_rotater->glob_path, 
+		a_rotater->num_width, 0,
+		a_rotater->glob_path + a_rotater->num_end_len);
+	if (nwrite < 0 || nwrite >= sizeof(new_path)) {
+		zc_error("nwirte[%d], overflow or errno[%d]", nwrite, errno);
+		return -1;
+	}
+
+	if (rename(a_rotater->base_path, new_path)) {
+		zc_error("rename[%s]->[%s] fail, errno[%d]", a_rotater->base_path, new_path, errno);
+		return -1;
+	}
+
+	return 0;
+}
+
+
+static int zlog_rotater_parse_archive_path(zlog_rotater_t * a_rotater)
+{
+	int nwrite;
+	int nread;
+	char *p;
+	size_t len;
+
+	/* no archive path is set */
+	if (a_rotater->archive_path[0] == '\0') {
+		nwrite = snprintf(a_rotater->glob_path, sizeof(a_rotater->glob_path),
+					"%s.*", a_rotater->base_path);
+		if (nwrite < 0 || nwrite > sizeof(a_rotater->glob_path)) {
+			zc_error("nwirte[%d], overflow or errno[%d]", nwrite, errno);
+			return -1;
+		}
+
+		a_rotater->mv_type = ROLLING;
+		a_rotater->num_width = 0;
+		a_rotater->num_start_len = strlen(a_rotater->base_path) + 1;
+		a_rotater->num_end_len = strlen(a_rotater->base_path) + 2;
+		return 0;
+	} else {
+
+		/* find the 1st # */
+		p = strchr(a_rotater->archive_path, '#');
+		if (!p) {
+			zc_error("no # in archive_path[%s]", a_rotater->archive_path);
+			return -1;
+		}
+
+		nread = 0;
+		sscanf(p, "#%d%n", &(a_rotater->num_width), &nread);
+		if (nread == 0) nread = 1;
+		if (*(p+nread) == 'r') {
+			a_rotater->mv_type = ROLLING;
+		} else if (*(p+nread) == 's') {
+			a_rotater->mv_type = SEQUENCE;
+		} else {
+			zc_error("#r or #s not found");
+			return -1;
+		}
+
+		/* copy and substitue #i to * in glob_path*/
+		len = p - a_rotater->archive_path;
+		if (len > sizeof(a_rotater->glob_path) - 1) {
+			zc_error("sizeof glob_path not enough,len[%ld]", (long) len);
+			return -1;
+		}
+		memcpy(a_rotater->glob_path, a_rotater->archive_path, len);
+
+		nwrite = snprintf(a_rotater->glob_path + len, sizeof(a_rotater->glob_path) - len,
+				"*%s", p + nread + 1);
+		if (nwrite < 0 || nwrite > sizeof(a_rotater->glob_path) - len) {
+			zc_error("nwirte[%d], overflow or errno[%d]", nwrite, errno);
+			return -1;
+		}
+
+		a_rotater->num_start_len = len;
+		a_rotater->num_end_len = len + 1;
+	}
+	
+	return 0;
+}
+
+static void zlog_rotater_clean(zlog_rotater_t *a_rotater)
+{
+	a_rotater->base_path = NULL;
+	a_rotater->archive_path = NULL;
+	a_rotater->max_count = 0;
+	a_rotater->mv_type = 0;
+	a_rotater->num_width = 0;
+	a_rotater->num_start_len = 0;
+	a_rotater->num_end_len = 0;
+	memset(a_rotater->glob_path, 0x00, sizeof(a_rotater->glob_path));
+
+	if (a_rotater->files) zc_arraylist_del(a_rotater->files);
+	a_rotater->files = NULL;
+}
+
+static int zlog_rotater_lsmv(zlog_rotater_t *a_rotater, 
+		char *base_path, char *archive_path, int archive_max_count)
+{
+	int rc = 0;
+
+	a_rotater->base_path = base_path;
+	a_rotater->archive_path = archive_path;
+	a_rotater->max_count = archive_max_count;
+	rc = zlog_rotater_parse_archive_path(a_rotater);
+	if (rc) {
+		zc_error("zlog_rotater_parse_archive_path fail");
+		goto err;
+	}
+
+	rc = zlog_rotater_add_archive_files(a_rotater);
+	if (rc) {
+		zc_error("zlog_rotater_add_archive_files fail");
+		goto err;
+	}
+
+	if (a_rotater->mv_type == ROLLING) {
+		rc = zlog_rotater_roll_files(a_rotater);
+		if (rc) {
+			zc_error("zlog_rotater_roll_files fail");
+			goto err;
+		}
+	} else if (a_rotater->mv_type == SEQUENCE) {
+		rc = zlog_rotater_seq_files(a_rotater);
+		if (rc) {
+			zc_error("zlog_rotater_seq_files fail");
+			goto err;
+		}
+	}
+
+	zlog_rotater_clean(a_rotater);
+	return 0;
+err:
+	zlog_rotater_clean(a_rotater);
+	return -1;
+}
 /*******************************************************************************/
 
 static int zlog_rotater_trylock(zlog_rotater_t *a_rotater)
 {
+	int rc;
 #ifndef _MSC_VER
 	struct flock fl;
 
@@ -232,16 +506,14 @@ static int zlog_rotater_trylock(zlog_rotater_t *a_rotater)
 	fl.l_len = 0;
 #endif
 
-	if (pthread_mutex_trylock(&(a_rotater->lock_mutex))) {
-		if (errno == EBUSY) {
-			zc_warn("pthread_mutex_trylock fail, as lock_mutex is locked by other threads");
-		} else {
-			zc_error("pthread_mutex_trylock fail, errno[%d]",
-				 errno);
-		}
+	rc = pthread_mutex_trylock(&(a_rotater->lock_mutex));
+	if (rc == EBUSY) {
+		zc_warn("pthread_mutex_trylock fail, as lock_mutex is locked by other threads");
+		return -1;
+	} else if (rc != 0) {
+		zc_error("pthread_mutex_trylock fail, rc[%d]", rc);
 		return -1;
 	}
-
 #ifdef _MSC_VER
         if (LockFile(a_rotater->lock_fd,999,0,1,0)==0) {
 	  zc_error("lock fd[%d] fail", a_rotater->lock_fd);
@@ -285,7 +557,7 @@ static int zlog_rotater_unlock(zlog_rotater_t *a_rotater)
 #else
         if (UnlockFile(a_rotater->lock_fd,999,0,1,0)==0) {
           rc = -1;
-	  zc_error("unlock fd[%s] fail", a_rotater->lock_fd);
+          zc_error("unlock fd[%s] fail", a_rotater->lock_fd);
         }
 #endif
 
@@ -297,192 +569,27 @@ static int zlog_rotater_unlock(zlog_rotater_t *a_rotater)
 	return rc;
 }
 
-#if 0
-
-static int zlog_rotater_one_file_mv_max(zlog_rotater_one_file * a_file,
-					char *base_file_path)
-{
-	char tmp[MAXLEN_PATH + 1];
-	int nwrite;
-
-	memset(&tmp, 0x00, sizeof(tmp));
-	nwrite =
-	    snprintf(tmp, sizeof(tmp), "%s.%d", base_file_path,
-		     a_file->index + 1);
-	if (nwrite < 0 || nwrite >= sizeof(tmp)) {
-		zc_error("not enough space for tmp, nwrite=[%d]", nwrite);
-		return -1;
-	}
-
-	if (rename(base_file_path, tmp)) {
-		zc_error("rename failed, errno[%d]", errno);
-		return -1;
-	}
-
-	return 0;
-}
-#endif
-
-int zlog_rotater_lsmv(char *base_file_path, int file_max_count)
+int zlog_rotater_rotate(zlog_rotater_t *a_rotater,
+		char *base_path, size_t msg_len,
+		char *archive_path, long archive_max_size, int archive_max_count)
 {
 	int rc = 0;
+	struct zlog_stat info;
 
-	char tmp[MAXLEN_PATH + 1];
-	glob_t glob_buf;
-	size_t pathc;
-	char **pathv;
-	int nwrite;
-	zc_arraylist_t *files = NULL;
-
-	zlog_rotater_onefile_t *a_file;
-	int i;
-
-	memset(&tmp, 0x00, sizeof(tmp));
-#ifdef _MSC_VER
-	nwrite = snprintf(tmp, sizeof(tmp), "%s.*", base_file_path);
-#else
-	nwrite = snprintf(tmp, sizeof(tmp), "%s.[0-9]*", base_file_path);
-#endif
-	if (nwrite < 0 || nwrite >= sizeof(tmp)) {
-		zc_error("not enough space for tmp, nwrite=[%d]", nwrite);
-		return -1;
-	}
-
-#ifdef _MSC_VER
-	/* Windows findfile will find "base" with the pattern "base.*" */
-	rc = glob(tmp, GLOB_ERR | GLOB_MARK | GLOB_NOSORT, NULL, &glob_buf);
-	if (rc) {
-		zc_error("glob err 1, rc=[%d], errno[%d]", rc, errno);
-		return -1;
-	}
-	files = zc_arraylist_new((zc_arraylist_del_fn) zlog_rotater_onefile_del);
-	if (!files) {
-		zc_error("zc_arraylist_new fail");
-		goto err;
-	}
-#else
-	/* scan file which is aa.[0-9]* and aa */
-	rc = glob(base_file_path, GLOB_ERR | GLOB_MARK | GLOB_NOSORT, NULL, &glob_buf);
-	if (rc) {
-		zc_error("glob err 1, rc=[%d], errno[%d]", rc, errno);
-		return -1;
-	}
-
-	files = zc_arraylist_new((zc_arraylist_del_fn) zlog_rotater_onefile_del);
-	if (!files) {
-		zc_error("zc_arraylist_new fail");
-		goto err;
-	}
-
-	rc = glob(tmp, GLOB_ERR | GLOB_MARK | GLOB_NOSORT | GLOB_APPEND, NULL, &glob_buf);
-#endif
-
-	if (rc != 0 && rc != GLOB_NOMATCH) {
-		zc_error("glob err 2, rc=[%d], errno[%d]", rc, errno);
-		goto err;
-	}
-
-
-	pathv = glob_buf.gl_pathv;
-	pathc = glob_buf.gl_pathc;
-
-	/* check and find aa.max */
-	for (; pathc-- > 0; pathv++) {
-		/* omit dirs */
-		if ((*pathv)[strlen(*pathv) - 1] == '/')
-			continue;
-
-		a_file = zlog_rotater_onefile_new(base_file_path, *pathv);
-		if (!a_file) {
-			zc_error("zlog_rotater_onefile_new fail");
-			goto err;
-		}
-
-		rc = zc_arraylist_sortadd(files,
-				  (zc_arraylist_cmp_fn)
-				  zlog_rotater_onefile_cmp, a_file);
-		if (rc) {
-			zc_error("zc_arraylist_sortadd fail");
-			goto err;
-		}
-	}
-
-	for (i = zc_arraylist_len(files) - 1; i > -1; i--) {
-		a_file = zc_arraylist_get(files, i);
-		if (!a_file) {
-			zc_error("zc_arraylist_get fail");
-			goto err;
-		}
-
-		if (file_max_count > 0 && i >= file_max_count - 1) {
-			/* remove file.3 >= 3*/
-			rc = unlink(a_file->path);
-			if (rc) {
-				zc_error("unlink fail, errno[%d]", errno);
-				goto err;
-			}
-			continue;
-		}
-
-		memset(&tmp, 0x00, sizeof(tmp));
-		nwrite = snprintf(tmp, sizeof(tmp), "%s.%d", base_file_path, a_file->index + 1);
-		if (nwrite < 0 || nwrite >= sizeof(tmp)) {
-			zc_error("not enough space for tmp, nwrite=[%d]", nwrite);
-			goto err;
-		}
-
-		if (rename(a_file->path, tmp)) {
-			zc_error("rename fail, errno[%d]", errno);
-			goto err;
-		}
-	}
-
-	if (files) zc_arraylist_del(files);
-	globfree(&glob_buf);
-	return 0;
-err:
-	if (files) zc_arraylist_del(files);
-	globfree(&glob_buf);
-	return -1;
-}
-
-int zlog_rotater_rotate(zlog_rotater_t *a_rotater, 
-		char *file_path, long file_max_size, int file_max_count,
-		size_t msg_len)
-{
-	int rc = 0;
-	struct stat info;
-
-	zc_assert(file_path, -1);
-
-	if (msg_len > file_max_size) {
-		zc_debug("one msg's len[%ld] > file_max_size[%ld], no rotate",
-			 (long)msg_len, file_max_size);
-		return 0;
-	}
-
-	if (stat(file_path, &info)) {
-		zc_warn("stat [%s] fail, errno[%d], maybe in rotating", file_path, errno);
-		return 0;
-	}
-
-	/* file not so big, return */
-	if (info.st_size + msg_len < file_max_size) return 0;
+	zc_assert(base_path, -1);
 
 	if (zlog_rotater_trylock(a_rotater)) {
 		zc_warn("zlog_rotater_trylock fail, maybe lock by other process or threads");
 		return 0;
 	}
 
-	if (stat(file_path, &info)) {
+	if (stat(base_path, &info)) {
 		rc = -1;
-		zc_error("stat [%s] fail, errno[%d]", file_path, errno);
+		zc_error("stat [%s] fail, errno[%d]", base_path, errno);
 		goto exit;
 	}
 
-	//printf("rotate %d %d\n",msg_len,file_max_size);
-
-	if (info.st_size + msg_len <= file_max_size) {
+	if (info.st_size + msg_len <= archive_max_size) {
 		/* file not so big,
 		 * may alread rotate by oth process or thread,
 		 * return */
@@ -491,15 +598,13 @@ int zlog_rotater_rotate(zlog_rotater_t *a_rotater,
 	}
 
 	/* begin list and move files */
-	rc = zlog_rotater_lsmv(file_path, file_max_count);
+	rc = zlog_rotater_lsmv(a_rotater, base_path, archive_path, archive_max_count);
 	if (rc) {
-		zc_error("zlog_rotater_file_ls_mv [%s] fail, return", file_path);
+		zc_error("zlog_rotater_lsmv [%s] fail, return", base_path);
 		rc = -1;
-		goto exit;
-	} else if (rc == 0) {
-		rc = 1;
-		zc_debug("zlog_rotater_file_ls_mv success");
-	}
+	} /* else if (rc == 0) */
+
+	//zc_debug("zlog_rotater_file_ls_mv success");
 
 exit:
 	/* unlock file */

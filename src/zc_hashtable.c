@@ -3,18 +3,7 @@
  *
  * Copyright (C) 2011 by Hardy Simpson <HardySimpson1984@gmail.com>
  *
- * The zlog Library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The zlog Library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the zlog Library. If not, see <http://www.gnu.org/licenses/>.
+ * Licensed under the LGPL v2.1, see the file COPYING in base directory.
  */
 
 #include <stdlib.h>
@@ -154,8 +143,7 @@ static int zc_hashtable_rehash(zc_hashtable_t * a_table)
 	return 0;
 }
 
-zc_hashtable_entry_t *zc_hashtable_get_entry(zc_hashtable_t * a_table,
-					     void *a_key)
+zc_hashtable_entry_t *zc_hashtable_get_entry(zc_hashtable_t * a_table, const void *a_key)
 {
 	unsigned int i;
 	zc_hashtable_entry_t *p;
@@ -169,7 +157,7 @@ zc_hashtable_entry_t *zc_hashtable_get_entry(zc_hashtable_t * a_table,
 	return NULL;
 }
 
-void *zc_hashtable_get(zc_hashtable_t * a_table, void *a_key)
+void *zc_hashtable_get(zc_hashtable_t * a_table, const void *a_key)
 {
 	unsigned int i;
 	zc_hashtable_entry_t *p;
@@ -238,7 +226,7 @@ int zc_hashtable_put(zc_hashtable_t * a_table, void *a_key, void *a_value)
 	return 0;
 }
 
-void zc_hashtable_remove(zc_hashtable_t * a_table, void *a_key)
+void zc_hashtable_remove(zc_hashtable_t * a_table, const void *a_key)
 {
 	zc_hashtable_entry_t *p;
 	unsigned int i;
@@ -294,8 +282,7 @@ zc_hashtable_entry_t *zc_hashtable_begin(zc_hashtable_t * a_table)
 	return NULL;
 }
 
-zc_hashtable_entry_t *zc_hashtable_next(zc_hashtable_t * a_table,
-					zc_hashtable_entry_t * a_entry)
+zc_hashtable_entry_t *zc_hashtable_next(zc_hashtable_t * a_table, zc_hashtable_entry_t * a_entry)
 {
 	size_t i;
 	size_t j;
@@ -316,7 +303,7 @@ zc_hashtable_entry_t *zc_hashtable_next(zc_hashtable_t * a_table,
 
 /*******************************************************************************/
 
-unsigned int zc_hashtable_str_hash(void *str)
+unsigned int zc_hashtable_str_hash(const void *str)
 {
 	unsigned int h = 5381;
 	const char *p = (const char *)str;
@@ -327,7 +314,7 @@ unsigned int zc_hashtable_str_hash(void *str)
 	return h;
 }
 
-int zc_hashtable_str_equal(void *key1, void *key2)
+int zc_hashtable_str_equal(const void *key1, const void *key2)
 {
 	return (STRCMP((const char *)key1, ==, (const char *)key2));
 }

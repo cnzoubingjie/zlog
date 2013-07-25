@@ -3,18 +3,7 @@
  *
  * Copyright (C) 2011 by Hardy Simpson <HardySimpson1984@gmail.com>
  *
- * The zlog Library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The zlog Library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the zlog Library. If not, see <http://www.gnu.org/licenses/>.
+ * Licensed under the LGPL v2.1, see the file COPYING in base directory.
  */
 
 #ifndef __zlog_category_h
@@ -23,21 +12,16 @@
 #include "zc_defs.h"
 #include "thread.h"
 
-struct zlog_category_s {
+typedef struct zlog_category_s {
 	char name[MAXLEN_PATH + 1];
 	size_t name_len;
 	unsigned char level_bitmap[32];
 	unsigned char level_bitmap_backup[32];
 	zc_arraylist_t *fit_rules;
 	zc_arraylist_t *fit_rules_backup;
-};
+} zlog_category_t;
 
-#ifndef __HAVE_ZLOG_CATEGORY_T
-#define __HAVE_ZLOG_CATEGORY_T
-typedef struct zlog_category_s zlog_category_t;
-#endif
-
-zlog_category_t *zlog_category_new(char *name, zc_arraylist_t * rules);
+zlog_category_t *zlog_category_new(const char *name, zc_arraylist_t * rules);
 void zlog_category_del(zlog_category_t * a_category);
 void zlog_category_profile(zlog_category_t *a_category, int flag);
 

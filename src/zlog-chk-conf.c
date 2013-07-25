@@ -3,18 +3,7 @@
  *
  * Copyright (C) 2011 by Hardy Simpson <HardySimpson1984@gmail.com>
  *
- * The zlog Library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The zlog Library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the zlog Library. If not, see <http://www.gnu.org/licenses/>.
+ * Licensed under the LGPL v2.1, see the file COPYING in base directory.
  */
 
 #include "fmacros.h"
@@ -27,6 +16,7 @@
 #include <unistd.h>
 
 #include "zlog.h"
+#include "version.h"
 
 
 int main(int argc, char *argv[])
@@ -35,18 +25,15 @@ int main(int argc, char *argv[])
 	int op;
 	int quiet = 0;
 	static const char *help = 
-		"Useage: zlog-chk-conf [conf files]...\n"
+		"useage: zlog-chk-conf [conf files]...\n"
 		"\t-q,\tsuppress non-error message\n"
 		"\t-h,\tshow help message\n"
-		"\t-v,\tshow zlog library's git version\n";
+		"zlog version: " ZLOG_VERSION "\n";
 
 #ifndef _MSC_VER
 	while((op = getopt(argc, argv, "qhv")) > 0) {
 		if (op == 'h') {
-			puts(help);
-			return 0;
-		} else if (op == 'v') {
-			printf("zlog git version[%s]\n", zlog_git_sha1);
+			fputs(help, stdout);
 			return 0;
 		} else if (op == 'q') {
 			quiet = 1;
@@ -58,7 +45,7 @@ int main(int argc, char *argv[])
 #endif
 
 	if (argc == 0) {
-		puts(help);
+		fputs(help, stdout);
 		return -1;
 	}
 

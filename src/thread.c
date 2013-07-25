@@ -3,18 +3,7 @@
  *
  * Copyright (C) 2011 by Hardy Simpson <HardySimpson1984@gmail.com>
  *
- * The zlog Library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The zlog Library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the zlog Library. If not, see <http://www.gnu.org/licenses/>.
+ * Licensed under the LGPL v2.1, see the file COPYING in base directory.
  */
 
 #include <pthread.h>
@@ -29,12 +18,13 @@
 void zlog_thread_profile(zlog_thread_t * a_thread, int flag)
 {
 	zc_assert(a_thread,);
-	zc_profile(flag, "--thread[%p][%p][%p][%p,%p,%p,%p]--",
+	zc_profile(flag, "--thread[%p][%p][%p][%p,%p,%p,%p,%p]--",
 			a_thread,
 			a_thread->mdc,
 			a_thread->event,
 			a_thread->pre_path_buf,
 			a_thread->path_buf,
+			a_thread->archive_path_buf,
 			a_thread->pre_msg_buf,
 			a_thread->msg_buf);
 
@@ -42,6 +32,7 @@ void zlog_thread_profile(zlog_thread_t * a_thread, int flag)
 	zlog_event_profile(a_thread->event, flag);
 	zlog_buf_profile(a_thread->pre_path_buf, flag);
 	zlog_buf_profile(a_thread->path_buf, flag);
+	zlog_buf_profile(a_thread->archive_path_buf, flag);
 	zlog_buf_profile(a_thread->pre_msg_buf, flag);
 	zlog_buf_profile(a_thread->msg_buf, flag);
 	return;
@@ -58,6 +49,8 @@ void zlog_thread_del(zlog_thread_t * a_thread)
 		zlog_buf_del(a_thread->pre_path_buf);
 	if (a_thread->path_buf)
 		zlog_buf_del(a_thread->path_buf);
+	if (a_thread->archive_path_buf)
+		zlog_buf_del(a_thread->archive_path_buf);
 	if (a_thread->pre_msg_buf)
 		zlog_buf_del(a_thread->pre_msg_buf);
 	if (a_thread->msg_buf)
@@ -68,7 +61,7 @@ void zlog_thread_del(zlog_thread_t * a_thread)
 	return;
 }
 
-zlog_thread_t *zlog_thread_new(size_t buf_size_min, size_t buf_size_max)
+zlog_thread_t *zlog_thread_new(int init_version, size_t buf_size_min, size_t buf_size_max, int time_cache_count)
 {
 	zlog_thread_t *a_thread;
 
@@ -78,13 +71,15 @@ zlog_thread_t *zlog_thread_new(size_t buf_size_min, size_t buf_size_max)
 		return NULL;
 	}
 
+	a_thread->init_version = init_version;
+
 	a_thread->mdc = zlog_mdc_new();
 	if (!a_thread->mdc) {
 		zc_error("zlog_mdc_new fail");
 		goto err;
 	}
 
-	a_thread->event = zlog_event_new();
+	a_thread->event = zlog_event_new(time_cache_count);
 	if (!a_thread->event) {
 		zc_error("zlog_event_new fail");
 		goto err;
@@ -102,14 +97,19 @@ zlog_thread_t *zlog_thread_new(size_t buf_size_min, size_t buf_size_max)
 		goto err;
 	}
 
+	a_thread->archive_path_buf = zlog_buf_new(MAXLEN_PATH + 1, MAXLEN_PATH + 1, NULL);
+	if (!a_thread->archive_path_buf) {
+		zc_error("zlog_buf_new fail");
+		goto err;
+	}
+
 	a_thread->pre_msg_buf = zlog_buf_new(buf_size_min, buf_size_max, "..." FILE_NEWLINE);
 	if (!a_thread->pre_msg_buf) {
 		zc_error("zlog_buf_new fail");
 		goto err;
 	}
 
-	a_thread->msg_buf =
-	    zlog_buf_new(buf_size_min, buf_size_max, "..." FILE_NEWLINE);
+	a_thread->msg_buf = zlog_buf_new(buf_size_min, buf_size_max, "..." FILE_NEWLINE);
 	if (!a_thread->msg_buf) {
 		zc_error("zlog_buf_new fail");
 		goto err;
@@ -124,84 +124,61 @@ err:
 }
 
 /*******************************************************************************/
-int zlog_thread_update_msg_buf(zlog_thread_t * a_thread, size_t buf_size_min, size_t buf_size_max)
+int zlog_thread_rebuild_msg_buf(zlog_thread_t * a_thread, size_t buf_size_min, size_t buf_size_max)
 {
+	zlog_buf_t *pre_msg_buf_new = NULL;
+	zlog_buf_t *msg_buf_new = NULL;
 	zc_assert(a_thread, -1);
 
-	/* 1st, mv msg_buf msg_buf_backup */
-	if (a_thread->pre_msg_buf_backup) zlog_buf_del(a_thread->pre_msg_buf_backup);
-	if (a_thread->msg_buf_backup) zlog_buf_del(a_thread->msg_buf_backup);
-	a_thread->pre_msg_buf_backup = a_thread->pre_msg_buf;
-	a_thread->msg_buf_backup = a_thread->msg_buf;
+	if ( (a_thread->msg_buf->size_min == buf_size_min)
+		&& (a_thread->msg_buf->size_max == buf_size_max)) {
+		zc_debug("buf size not changed, no need rebuild");
+		return 0;
+	}
 
-
-	/* 2nd, gen new buf */
-	a_thread->pre_msg_buf = zlog_buf_new(buf_size_min, buf_size_max, "..." FILE_NEWLINE);
-	if (!a_thread->pre_msg_buf) {
+	pre_msg_buf_new = zlog_buf_new(buf_size_min, buf_size_max, "..." FILE_NEWLINE);
+	if (!pre_msg_buf_new) {
 		zc_error("zlog_buf_new fail");
 		goto err;
 	}
 
-	a_thread->msg_buf = zlog_buf_new(buf_size_min, buf_size_max, "..." FILE_NEWLINE);
-	if (!a_thread->msg_buf) {
+	msg_buf_new = zlog_buf_new(buf_size_min, buf_size_max, "..." FILE_NEWLINE);
+	if (!msg_buf_new) {
 		zc_error("zlog_buf_new fail");
 		goto err;
 	}
+
+	zlog_buf_del(a_thread->pre_msg_buf);
+	a_thread->pre_msg_buf = pre_msg_buf_new;
+
+	zlog_buf_del(a_thread->msg_buf);
+	a_thread->msg_buf = msg_buf_new;
 
 	return 0;
 err:
-	if (a_thread->pre_msg_buf) zlog_buf_del(a_thread->pre_msg_buf);
-	if (a_thread->msg_buf) zlog_buf_del(a_thread->msg_buf);
-	a_thread->pre_msg_buf = NULL;
-	a_thread->msg_buf = NULL;
+	if (pre_msg_buf_new) zlog_buf_del(pre_msg_buf_new);
+	if (msg_buf_new) zlog_buf_del(msg_buf_new);
 	return -1;
 }
 
-void zlog_thread_commit_msg_buf(zlog_thread_t * a_thread)
+int zlog_thread_rebuild_event(zlog_thread_t * a_thread, int time_cache_count)
 {
-	zc_assert(a_thread, );
-	if (!a_thread->pre_msg_buf_backup && !a_thread->msg_buf_backup) {
-		zc_warn("backup is null, never update before");
-		return;
+	zlog_event_t *event_new = NULL;
+	zc_assert(a_thread, -1);
+
+	event_new = zlog_event_new(time_cache_count);
+	if (!event_new) {
+		zc_error("zlog_event_new fail");
+		goto err;
 	}
 
-	if (a_thread->pre_msg_buf_backup) zlog_buf_del(a_thread->pre_msg_buf_backup);
-	a_thread->pre_msg_buf_backup = NULL;
-	if (a_thread->msg_buf_backup) zlog_buf_del(a_thread->msg_buf_backup);
-	a_thread->msg_buf_backup = NULL;
-	return;
+	zlog_event_del(a_thread->event);
+	a_thread->event = event_new;
+	return 0;
+err:
+	if (event_new) zlog_event_del(event_new);
+	return -1;
 }
 
-void zlog_thread_rollback_msg_buf(zlog_thread_t * a_thread)
-{
-	zc_assert(a_thread,);
-	if (!a_thread->pre_msg_buf_backup || !a_thread->msg_buf_backup) {
-		zc_warn("backup is null, never update before");
-		return;
-	}
-
-	if (a_thread->pre_msg_buf) {
-		/* update success */
-		zlog_buf_del(a_thread->pre_msg_buf);
-		a_thread->pre_msg_buf = a_thread->pre_msg_buf_backup;
-		a_thread->pre_msg_buf_backup = NULL;
-	} else {
-		/* update fail */
-		a_thread->pre_msg_buf = a_thread->pre_msg_buf_backup;
-		a_thread->pre_msg_buf_backup = NULL;
-	}
-
-	if (a_thread->msg_buf) {
-		/* update success */
-		zlog_buf_del(a_thread->msg_buf);
-		a_thread->msg_buf = a_thread->msg_buf_backup;
-		a_thread->msg_buf_backup = NULL;
-	} else {
-		/* update fail */
-		a_thread->msg_buf = a_thread->msg_buf_backup;
-		a_thread->msg_buf_backup = NULL;
-	}
-	return;
-}
 
 /*******************************************************************************/

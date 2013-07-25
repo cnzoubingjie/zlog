@@ -1,20 +1,9 @@
 /*
  * This file is part of the zlog Library.
  *
- * Copyright (C) 2011 by Hardy Simpson <HardySimpson@gmail.com>
+ * Copyright (C) 2011 by Hardy Simpson <HardySimpson1984@gmail.com>
  *
- * The zlog Library is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * The zlog Library is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Lesser General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with the zlog Library. If not, see <http://www.gnu.org/licenses/>.
+ * Licensed under the LGPL v2.1, see the file COPYING in base directory.
  */
 
 #include <stdio.h>
@@ -32,7 +21,7 @@ int main(int argc, char** argv)
 	int i;
 
 	if (argc != 2) {
-		printf("test_init ntime\n");
+		printf("test_leak ntime\n");
 		return -1;
 	}
 
@@ -41,23 +30,26 @@ int main(int argc, char** argv)
 	k = atoi(argv[1]);
 	while (k-- > 0) {
 		i = rand();
-		switch (i % 3) {
+		switch (i % 4) {
 		case 0:
-			rc = zlog_init("zlog.conf");
-			printf("init\n");
+			rc = dzlog_init("test_leak.conf", "xxx");
+			dzlog_info("init");
 			break;
 		case 1:
 			rc = zlog_reload(NULL);
-			printf("update\n");
+			dzlog_info("reload null");
 			break;
 		case 2:
+			rc = zlog_reload("test_leak.2.conf");
+			dzlog_info("reload 2");
+			break;
+		case 3:
 			zlog_fini();
 			printf("fini\n");
 	//		printf("zlog_finish\tj=[%d], rc=[%d]\n", j, rc);
 			break;
 		}
 	}
-
 
 	zlog_fini();
 	return 0;
